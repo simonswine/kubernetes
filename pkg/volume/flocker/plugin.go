@@ -66,11 +66,11 @@ func (p *flockerPlugin) Init(host volume.VolumeHost) error {
 	return nil
 }
 
-func (p flockerPlugin) Name() string {
+func (p *flockerPlugin) Name() string {
 	return flockerPluginName
 }
 
-func (p flockerPlugin) CanSupport(spec *volume.Spec) bool {
+func (p *flockerPlugin) CanSupport(spec *volume.Spec) bool {
 	return (spec.PersistentVolume != nil && spec.PersistentVolume.Spec.Flocker != nil) ||
 		(spec.Volume != nil && spec.Volume.Flocker != nil)
 }
@@ -115,24 +115,24 @@ type flockerMounter struct {
 	volume.MetricsNil
 }
 
-func (b flockerMounter) GetAttributes() volume.Attributes {
+func (b *flockerMounter) GetAttributes() volume.Attributes {
 	return volume.Attributes{
 		ReadOnly:        b.readOnly,
 		Managed:         false,
 		SupportsSELinux: false,
 	}
 }
-func (b flockerMounter) GetPath() string {
+func (b *flockerMounter) GetPath() string {
 	return b.flocker.path
 }
 
-func (b flockerMounter) SetUp(fsGroup *int64) error {
+func (b *flockerMounter) SetUp(fsGroup *int64) error {
 	return b.SetUpAt(b.flocker.datasetName, fsGroup)
 }
 
 // newFlockerClient uses environment variables and pod attributes to return a
 // flocker client capable of talking with the Flocker control service.
-func (b flockerMounter) newFlockerClient() (*flockerclient.Client, error) {
+func (b *flockerMounter) newFlockerClient() (*flockerclient.Client, error) {
 	host := env.GetEnvAsStringOrFallback("FLOCKER_CONTROL_SERVICE_HOST", defaultHost)
 	port, err := env.GetEnvAsIntOrFallback("FLOCKER_CONTROL_SERVICE_PORT", defaultPort)
 
@@ -167,7 +167,7 @@ control service:
    need to update the Primary UUID for this volume.
 5. Wait until the Primary UUID was updated or timeout.
 */
-func (b flockerMounter) SetUpAt(dir string, fsGroup *int64) error {
+func (b *flockerMounter) SetUpAt(dir string, fsGroup *int64) error {
 	if volumeutil.IsReady(b.getMetaDir()) {
 		return nil
 	}
@@ -214,7 +214,7 @@ func (b flockerMounter) SetUpAt(dir string, fsGroup *int64) error {
 
 // updateDatasetPrimary will update the primary in Flocker and wait for it to
 // be ready. If it never gets to ready state it will timeout and error.
-func (b flockerMounter) updateDatasetPrimary(datasetID, primaryUUID string) error {
+func (b *flockerMounter) updateDatasetPrimary(datasetID, primaryUUID string) error {
 	// We need to update the primary and wait for it to be ready
 	_, err := b.client.UpdatePrimaryForDataset(primaryUUID, datasetID)
 	if err != nil {
