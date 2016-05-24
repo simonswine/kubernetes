@@ -21,7 +21,6 @@ import (
 	"path"
 	"time"
 
-	flockerclient "github.com/ClusterHQ/flocker-go"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/types"
 	"k8s.io/kubernetes/pkg/util/env"
@@ -30,6 +29,9 @@ import (
 	"k8s.io/kubernetes/pkg/util/strings"
 	"k8s.io/kubernetes/pkg/volume"
 	volumeutil "k8s.io/kubernetes/pkg/volume/util"
+
+	flockerclient "github.com/ClusterHQ/flocker-go"
+	"github.com/golang/glog"
 )
 
 const (
@@ -122,12 +124,26 @@ func (b *flockerMounter) GetAttributes() volume.Attributes {
 		SupportsSELinux: false,
 	}
 }
+
 func (b *flockerMounter) GetPath() string {
+	if b.flocker.path == "" {
+		glog.V(1).Infof("FLOCKER warning reporting empty mount path %s", b.flocker.path)
+	}
 	return b.flocker.path
 }
 
 func (b *flockerMounter) SetUp(fsGroup *int64) error {
 	return b.SetUpAt(b.flocker.datasetName, fsGroup)
+}
+
+func (b *flockerMounter) TearDown() error {
+	return b.TearDownAt(b.flocker.datasetName)
+}
+
+// TearDownAt simply discards everything in the directory.
+func (b *flockerMounter) TearDownAt(dir string) error {
+	glog.V(4).Infof("FLOCKER tear down: %s", dir)
+	return nil
 }
 
 // newFlockerClient uses environment variables and pod attributes to return a
@@ -143,6 +159,7 @@ func (b *flockerMounter) newFlockerClient() (*flockerclient.Client, error) {
 	keyPath := env.GetEnvAsStringOrFallback("FLOCKER_CONTROL_SERVICE_CLIENT_KEY_FILE", defaultClientKeyFile)
 	certPath := env.GetEnvAsStringOrFallback("FLOCKER_CONTROL_SERVICE_CLIENT_CERT_FILE", defaultClientCertFile)
 
+	glog.V(4).Infof("FLOCKER creating a new client: host=%s port=%d ca_cert=%s key=%s cert=%s", host, port, caCertPath, keyPath, certPath)
 	c, err := flockerclient.NewClient(host, port, b.flocker.pod.Status.HostIP, caCertPath, keyPath, certPath)
 	return c, err
 }
@@ -172,12 +189,22 @@ func (b *flockerMounter) SetUpAt(dir string, fsGroup *int64) error {
 		return nil
 	}
 
+	glog.V(4).Infof("FLOCKER mount set up: %s", dir)
+
 	if b.client == nil {
 		c, err := b.newFlockerClient()
 		if err != nil {
 			return err
 		}
 		b.client = c
+	}
+
+	glog.V(4).Infof("FLOCKER DEBUG builder %+v", b)
+	glog.V(4).Infof("FLOCKER DEBUG flocker  %+v", b.flocker)
+
+	if b.flocker.path != "" {
+		glog.V(4).Infof("FLOCKER skipping setup for volume %s, as path is already set: %s", dir, b.flocker.path)
+		return nil
 	}
 
 	datasetID, err := b.client.GetDatasetID(dir)
