@@ -218,6 +218,9 @@ type VolumeHost interface {
 
 	// Returns a function that returns a secret.
 	GetSecretFunc() func(namespace, name string) (*v1.Secret, error)
+
+	// Returns node labels.
+	GetNodeLabels() (map[string]string, error)
 }
 
 // VolumePluginMgr tracks registered plugins.

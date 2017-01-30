@@ -626,3 +626,7 @@ func (adc *attachDetachController) GetSecretFunc() func(namespace, name string) 
 		return nil, fmt.Errorf("GetSecret unsupported in attachDetachController")
 	}
 }
+
+func (adc *attachDetachController) GetNodeLabels() (map[string]string, error) {
+	return nil, fmt.Errorf("GetNodeLabels unsupported in attachDetachController")
+}

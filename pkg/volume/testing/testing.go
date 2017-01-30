@@ -49,6 +49,7 @@ type fakeVolumeHost struct {
 	cloud      cloudprovider.Interface
 	mounter    mount.Interface
 	writer     io.Writer
+	nodeLabels map[string]string
 }
 
 func NewFakeVolumeHost(rootDir string, kubeClient clientset.Interface, plugins []VolumePlugin) *fakeVolumeHost {
@@ -56,6 +57,12 @@ func NewFakeVolumeHost(rootDir string, kubeClient clientset.Interface, plugins [
 	host.mounter = &mount.FakeMounter{}
 	host.writer = &io.StdWriter{}
 	host.pluginMgr.InitPlugins(plugins, host)
+	return host
+}
+
+func NewFakeVolumeHostWithLabels(rootDir string, kubeClient clientset.Interface, plugins []VolumePlugin, nodeLabels map[string]string) *fakeVolumeHost {
+	host := NewFakeVolumeHost(rootDir, kubeClient, plugins)
+	host.nodeLabels = nodeLabels
 	return host
 }
 
@@ -131,6 +138,10 @@ func (f *fakeVolumeHost) GetSecretFunc() func(namespace, name string) (*v1.Secre
 	return func(namespace, name string) (*v1.Secret, error) {
 		return f.kubeClient.Core().Secrets(namespace).Get(name, metav1.GetOptions{})
 	}
+}
+
+func (f *fakeVolumeHost) GetNodeLabels() (map[string]string, error) {
+	return f.nodeLabels, nil
 }
 
 func ProbeVolumePlugins(config VolumeConfig) []VolumePlugin {

@@ -45,6 +45,14 @@ func newTestHost(t *testing.T, clientset clientset.Interface) (string, volume.Vo
 	return tempDir, volumetest.NewFakeVolumeHost(tempDir, clientset, empty_dir.ProbeVolumePlugins())
 }
 
+func newTestHostWithLabels(t *testing.T, clientset clientset.Interface, nodeLabels map[string]string) (string, volume.VolumeHost) {
+	tempDir, err := utiltesting.MkTmpdir("downwardApi_volume_test.")
+	if err != nil {
+		t.Fatalf("can't make a temp rootdir: %v", err)
+	}
+	return tempDir, volumetest.NewFakeVolumeHostWithLabels(tempDir, clientset, empty_dir.ProbeVolumePlugins(), nodeLabels)
+}
+
 func TestCanSupport(t *testing.T) {
 	pluginMgr := volume.VolumePluginMgr{}
 	tmpDir, host := newTestHost(t, nil)
@@ -79,7 +87,87 @@ func CleanEverything(plugin volume.VolumePlugin, testVolumeName, volumePath stri
 	}
 }
 
-func TestLabels(t *testing.T) {
+func TestNodeLabels(t *testing.T) {
+	var (
+		testPodUID     = types.UID("test_pod_uid")
+		testVolumeName = "test_node_labels"
+		testNamespace  = "test_metadata_namespace"
+		testName       = "test_metadata_name"
+	)
+
+	clientset := fake.NewSimpleClientset(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testName,
+			Namespace: testNamespace,
+		},
+	})
+
+	nodeLabels := map[string]string{
+		"nodekey1": "value1",
+		"nodekey2": "value2",
+	}
+
+	pluginMgr := volume.VolumePluginMgr{}
+	rootDir, host := newTestHostWithLabels(t, clientset, nodeLabels)
+	defer os.RemoveAll(rootDir)
+
+	pluginMgr.InitPlugins(ProbeVolumePlugins(), host)
+	plugin, err := pluginMgr.FindPluginByName(downwardAPIPluginName)
+	defaultMode := int32(0644)
+	volumeSpec := &v1.Volume{
+		Name: testVolumeName,
+		VolumeSource: v1.VolumeSource{
+			DownwardAPI: &v1.DownwardAPIVolumeSource{
+				DefaultMode: &defaultMode,
+				Items: []v1.DownwardAPIVolumeFile{
+					{Path: "labels", FieldRef: &v1.ObjectFieldSelector{
+						FieldPath: "node.metadata.labels"}}}},
+		},
+	}
+	if err != nil {
+		t.Errorf("Can't find the plugin by name")
+	}
+	pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{UID: testPodUID}}
+	mounter, err := plugin.NewMounter(volume.NewSpecFromVolume(volumeSpec), pod, volume.VolumeOptions{})
+
+	if err != nil {
+		t.Errorf("Failed to make a new Mounter: %v", err)
+	}
+	if mounter == nil {
+		t.Errorf("Got a nil Mounter")
+	}
+
+	volumePath := mounter.GetPath()
+
+	err = mounter.SetUp(nil)
+	if err != nil {
+		t.Errorf("Failed to setup volume: %v", err)
+	}
+
+	// downwardAPI volume should create its own empty wrapper path
+	podWrapperMetadataDir := fmt.Sprintf("%v/pods/%v/plugins/kubernetes.io~empty-dir/wrapped_%v", rootDir, testPodUID, testVolumeName)
+
+	if _, err := os.Stat(podWrapperMetadataDir); err != nil {
+		if os.IsNotExist(err) {
+			t.Errorf("SetUp() failed, empty-dir wrapper path was not created: %s", podWrapperMetadataDir)
+		} else {
+			t.Errorf("SetUp() failed: %v", err)
+		}
+	}
+
+	var data []byte
+	data, err = ioutil.ReadFile(path.Join(volumePath, "labels"))
+	if err != nil {
+		t.Errorf(err.Error())
+	}
+	if sortLines(string(data)) != sortLines(fieldpath.FormatMap(nodeLabels)) {
+		t.Errorf("Found `%s` expected %s", data, fieldpath.FormatMap(nodeLabels))
+	}
+
+	CleanEverything(plugin, testVolumeName, volumePath, testPodUID, t)
+}
+
+func TestPodLabels(t *testing.T) {
 	var (
 		testPodUID     = types.UID("test_pod_uid")
 		testVolumeName = "test_labels"

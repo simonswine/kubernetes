@@ -39,7 +39,8 @@ func ProbeVolumePlugins() []volume.VolumePlugin {
 }
 
 const (
-	downwardAPIPluginName = "kubernetes.io/downward-api"
+	downwardAPIPluginName          = "kubernetes.io/downward-api"
+	downwardAPIFieldPathNodePrefix = "node."
 )
 
 // downwardAPIPlugin implements the VolumePlugin interface.
@@ -222,9 +223,26 @@ func (d *downwardAPIVolume) collectData(defaultMode *int32) (map[string]volumeut
 			fileProjection.Mode = *defaultMode
 		}
 		if fileInfo.FieldRef != nil {
+			var obj interface{}
+			var fieldPath string
+			if strings.HasPrefix(fileInfo.FieldRef.FieldPath, downwardAPIFieldPathNodePrefix) {
+				node := &v1.Node{}
+				node.Name = d.pod.Spec.NodeName
+				fieldPath = fileInfo.FieldRef.FieldPath[len(downwardAPIFieldPathNodePrefix):]
+				nodeLabels, err := d.plugin.host.GetNodeLabels()
+				if err != nil {
+					glog.Errorf("Unable to fetch node labels: %s", err.Error())
+				} else {
+					node.Labels = nodeLabels
+				}
+				obj = node
+			} else {
+				obj = d.pod
+				fieldPath = fileInfo.FieldRef.FieldPath
+			}
 			// TODO: unify with Kubelet.podFieldSelectorRuntimeValue
-			if values, err := fieldpath.ExtractFieldPathAsString(d.pod, fileInfo.FieldRef.FieldPath); err != nil {
-				glog.Errorf("Unable to extract field %s: %s", fileInfo.FieldRef.FieldPath, err.Error())
+			if values, err := fieldpath.ExtractFieldPathAsString(obj, fieldPath); err != nil {
+				glog.Errorf("Unable to extract field %s: %s", fieldPath, err.Error())
 				errlist = append(errlist, err)
 			} else {
 				fileProjection.Data = []byte(sortLines(values))

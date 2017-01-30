@@ -129,6 +129,14 @@ func (kvh *kubeletVolumeHost) GetHostIP() (net.IP, error) {
 	return kvh.kubelet.GetHostIP()
 }
 
+func (kvh *kubeletVolumeHost) GetNodeLabels() (map[string]string, error) {
+	node, err := kvh.kubelet.getNodeAnyWay()
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving node: %v", err)
+	}
+	return node.GetLabels(), nil
+}
+
 func (kvh *kubeletVolumeHost) GetNodeAllocatable() (v1.ResourceList, error) {
 	node, err := kvh.kubelet.getNodeAnyWay()
 	if err != nil {
