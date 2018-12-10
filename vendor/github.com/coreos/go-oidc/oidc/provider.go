@@ -1,9 +1,11 @@
 package oidc
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -248,8 +250,8 @@ func (cfg ProviderConfig) toEncodableStruct() encodableProviderConfig {
 		RequestParameterSupported:                  cfg.RequestParameterSupported,
 		RequestURIParamaterSupported:               cfg.RequestURIParamaterSupported,
 		RequireRequestURIRegistration:              cfg.RequireRequestURIRegistration,
-		Policy:         uriToString(cfg.Policy),
-		TermsOfService: uriToString(cfg.TermsOfService),
+		Policy:                                     uriToString(cfg.Policy),
+		TermsOfService:                             uriToString(cfg.TermsOfService),
 	}
 }
 
@@ -291,8 +293,8 @@ func (e encodableProviderConfig) toStruct() (ProviderConfig, error) {
 		RequestParameterSupported:                  e.RequestParameterSupported,
 		RequestURIParamaterSupported:               e.RequestURIParamaterSupported,
 		RequireRequestURIRegistration:              e.RequireRequestURIRegistration,
-		Policy:         p.parseURI(e.Policy, "op_policy-uri"),
-		TermsOfService: p.parseURI(e.TermsOfService, "op_tos_uri"),
+		Policy:                                     p.parseURI(e.Policy, "op_policy-uri"),
+		TermsOfService:                             p.parseURI(e.TermsOfService, "op_tos_uri"),
 	}
 	if p.firstErr != nil {
 		return ProviderConfig{}, p.firstErr
@@ -624,24 +626,34 @@ func (r *httpProviderConfigGetter) Get() (cfg ProviderConfig, err error) {
 	discoveryURL := strings.TrimSuffix(r.issuerURL, "/") + discoveryConfigPath
 	req, err := http.NewRequest("GET", discoveryURL, nil)
 	if err != nil {
-		return
+		return cfg, err
 	}
 
 	resp, err := r.hc.Do(req)
 	if err != nil {
-		return
+		return cfg, err
 	}
 	defer resp.Body.Close()
 
-	if err = json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
-		return
+	fmt.Printf("debug oidc status %d", resp.StatusCode)
+	fmt.Printf("debug oidc resp %+v", resp)
+	fmt.Printf("debug oidc body %+v", resp)
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return cfg, fmt.Errorf("err readall: %s", err)
+	}
+	reader := bytes.NewReader(body)
+
+	if err = json.NewDecoder(reader).Decode(&cfg); err != nil {
+		return cfg, fmt.Errorf("error json: %+v", err)
 	}
 
 	var ttl time.Duration
 	var ok bool
 	ttl, ok, err = phttp.Cacheable(resp.Header)
 	if err != nil {
-		return
+		return cfg, fmt.Errorf("error cachable: %+v", err)
 	} else if ok {
 		cfg.ExpiresAt = r.clock.Now().UTC().Add(ttl)
 	}
